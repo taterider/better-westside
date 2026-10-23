@@ -1,0 +1,50 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LA Neighborhood Report</title>
+<script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+<style>body{font-family:system-ui;max-width:640px;margin:auto;padding:12px}button,select,input,textarea{width:100%;font-size:16px;margin:6px 0;padding:10px;box-sizing:border-box}img{max-width:100%}.box{background:#f3f3f3;padding:10px;border-radius:8px;margin:8px 0}.warn{color:#a40}</style></head><body>
+<h2>Report an issue (City of LA)</h2>
+<input type="file" id="photo" accept="image/*">
+<img id="prev">
+<button id="gps">Use my current location instead</button>
+<input id="addr" placeholder="Or type address / cross street"><button id="geo">Look up typed address</button>
+<div class="box" id="loc">No location yet.</div>
+<select id="type"><option value="dumping">Illegal dumping / bulky items</option><option value="trash">Trash / litter</option><option value="encampment">Homeless encampment</option></select>
+<textarea id="notes" rows="2" placeholder="Details (optional)"></textarea>
+<select id="dep"></select><input id="cc" placeholder="CC"><input id="to" placeholder="To (council office email)">
+<input id="subj"><textarea id="body" rows="12"></textarea>
+<p><small>Privacy: your location is sent to OpenStreetMap and Esri/ArcGIS (address lookup) and City of LA / ArcGIS map servers (district and 41.18 checks). Your photo stays on your device. Nothing is stored or sent by this page.</small></p><p class="warn">Attach the photo manually in your email app. This page never sends anything itself.</p>
+<button id="mail">Open in my email</button>
+<button onclick="window.open('https://myla311.lacity.gov','_blank')">File with MyLA311</button>
+<div class="box" id="tip"></div>
+<script>
+// Verified Oct 23 2026 from cd5.lacity.gov/contact, cd5.lacity.gov/meet-team, cd11.lacity.gov/about/contact-us, cd11.lacity.gov/about/team-traci
+const CD={5:{n:'Katy Yaroslavsky',e:'Councilmember.Yaroslavsky@lacity.org',d:[
+ ['Thao Tran – Hancock Park, Greater Wilshire, Park La Brea',''],['Shannan Calland – Westwood',''],['Cairo Rodriguez – Miracle Mile, Mid-City West, Carthays',''],
+ ['Kenneth Miller – South Robertson, Crestview, Beverlywood',''],['Vanessa Saldana – Bel Air, Beverly Crest, Holmby Hills',''],['Marley Powell – Rancho Park, West LA, Palms, Cheviot Hills','']]},
+ 11:{n:'Traci Park',e:'councilmember.park@lacity.org',d:[
+ ['Allysa Barrow – Mar Vista, Del Rey','Allysa.Barrow@lacity.org'],['Amir Ebtehadj – Westchester, Playa del Rey, Playa Vista, Ladera','Amir.Ebtehadj@lacity.org'],
+ ['Sophie Morris – Palisades, Brentwood','Sophie.Morris@lacity.org'],['Sam Faulkner – Venice','Sam.Faulkner@lacity.org']]}};
+function deps(){const c=CD[S.cd];$('dep').innerHTML='<option value="">Field deputy (optional, CC)</option>'+(c?c.d.map(x=>`<option value="${x[1]}">${x[0]}${x[1]?'':' (no public email – office will route)'}</option>`).join(''):'');}
+const Z='https://services7.arcgis.com/2hYXmwteFLemN5bW/arcgis/rest/services/Los_Angeles_ordinance_41_18_vers2_WFL1/FeatureServer/';
+const ZN=['School campus buffer','Sidewalk/driveway buffer','Railway buffer','Tunnel buffer','Interim housing buffer'];
+let S={};const $=id=>document.getElementById(id);
+const q=(u,p)=>fetch(u+'?'+new URLSearchParams(p)).then(r=>r.json());
+async function setLoc(lat,lng,src){S={...S,lat,lng,src};$('loc').textContent='Looking up…';
+ const r=await q('https://nominatim.openstreetmap.org/reverse',{lat,lon:lng,format:'json'}).catch(()=>({}));S.address=r.display_name||'';
+ const pt={geometry:lng+','+lat,geometryType:'esriGeometryPoint',inSR:4326,spatialRel:'esriSpatialRelIntersects',returnGeometry:false,f:'json'};
+ const c=await q('https://maps.lacity.org/lahub/rest/services/Boundaries/MapServer/13/query',{...pt,outFields:'District,NAME'}).catch(()=>({}));
+ const f=c.features&&c.features[0];S.cd=f?f.attributes.District:null;S.cm=f?f.attributes.NAME:null;
+ S.zones=[];await Promise.all(ZN.map((n,i)=>q(Z+i+'/query',{...pt,returnCountOnly:true}).then(x=>{if(x.count)S.zones.push(n)}).catch(()=>{})));
+ $('loc').innerHTML=`${lat.toFixed(5)}, ${lng.toFixed(5)} (${src})<br>${S.address}<br><b>${S.cd?'Council District '+S.cd+' – '+S.cm:'Not in City of LA (no council district)'}</b><br>41.18 buffer check (unofficial dataset): ${S.zones.length?S.zones.join(', '):'none found'}`;
+ $('to').value=CD[S.cd]?CD[S.cd].e:'';deps();if(S.cd&&!CD[S.cd])$('loc').innerHTML+='<br><b class=warn>This tool only covers Council Districts 5 and 11. Please file with MyLA311 (myla311.lacity.gov or call 311).</b>';draft();}
+function draft(){const t=$('type').selectedOptions[0].text;$('subj').value=`${t} report – ${S.address?S.address.split(',').slice(0,2).join(','):''}${S.cd?' (CD'+S.cd+')':''}`;
+ $('body').value=`Hello Councilmember ${S.cm||''}'s office,\n\nI'd like to report: ${t}.\nLocation: ${S.address||''}\nCoordinates: ${S.lat?S.lat.toFixed(5)+', '+S.lng.toFixed(5):''}\nMap: ${S.lat?'https://maps.google.com/?q='+S.lat+','+S.lng:''}\n${S.zones&&S.zones.length?'This location appears to fall within an LAMC 41.18 restricted area ('+S.zones.join(', ')+').\n':''}${$('notes').value?'Details: '+$('notes').value+'\n':''}MyLA311 ticket #: ______\n\nPhoto attached. Please route to the field deputy for this area.\n\nThank you,`;
+ $('tip').textContent={dumping:'MyLA311: choose "Illegal Dumping" (or "Bulky Item" pickup).',trash:'MyLA311: choose "Illegal Dumping" or "Dead Animal/Litter" related category.',encampment:'MyLA311: choose "Homeless Encampment". For a person needing help, also use LAHSA outreach request: lahsa.org/outreach.'}[$('type').value];}
+$('photo').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('prev').src=URL.createObjectURL(f);
+ const g=await exifr.gps(f).catch(()=>null);if(g&&g.latitude)setLoc(g.latitude,g.longitude,'photo GPS');else $('loc').textContent='Photo has no GPS. Use current location or type an address.';};
+$('gps').onclick=()=>navigator.geolocation.getCurrentPosition(p=>setLoc(p.coords.latitude,p.coords.longitude,'device'),e=>alert(e.message));
+$('geo').onclick=async()=>{const a=$('addr').value.replace(/\s+and\s+/i,' & ');const r=await q('https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates',{SingleLine:a+', Los Angeles, CA',maxLocations:1,f:'json'}).catch(()=>({}));const c=r.candidates&&r.candidates[0];if(c&&c.score>80)setLoc(c.location.y,c.location.x,'typed: '+c.address);else $('loc').textContent='Address not found. Try a street number or "Street & Street".';};
+$('dep').onchange=()=>$('cc').value=$('dep').value;$('type').onchange=draft;$('notes').oninput=draft;
+$('mail').onclick=()=>{location.href=mailtoUrl()};function mailtoUrl(){return `mailto:${$('to').value}?${$('cc').value?'cc='+encodeURIComponent($('cc').value)+'&':''}subject=${encodeURIComponent($('subj').value)}&body=${encodeURIComponent($('body').value)}`;}
+draft();
+</script></body></html>
